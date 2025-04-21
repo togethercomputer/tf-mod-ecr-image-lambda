@@ -1,0 +1,18 @@
+name: Approve Emergency Pull Request
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize, labeled]
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./approve_emergency
+
+jobs:
+  approve_emergency:
+    if: ${{ vars.ACTIONS_ENABLED == 'true' }}
+    uses: togethercomputer/github-actions-test/.github/workflows/approve-emergency.yaml@main
+    secrets: inherit

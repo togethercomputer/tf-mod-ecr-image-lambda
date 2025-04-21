@@ -1,0 +1,18 @@
+name: Label Pull Request with T-shirt Size
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./label-pr-size
+
+jobs:
+  label_pr_size:
+    if: ${{ vars.ACTIONS_ENABLED == 'true' }}
+    uses: togethercomputer/github-actions-test/.github/workflows/label-pr-size.yaml@main
+    secrets: inherit

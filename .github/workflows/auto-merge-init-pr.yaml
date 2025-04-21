@@ -1,0 +1,95 @@
+name: Auto-merge Initialization PR created via Terraform
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+env:
+  GITHUB_TOKEN: ${{ secrets.ROBOT_GITHUB_TOKEN }}
+  TRIGGER_TITLE_PREFIX: "[INITIALIZE]"
+  TRIGGER_BODY_MARKER: "<!-- INIT_PR_MARKER: DO_NOT_TOUCH -->"
+
+jobs:
+  init_repo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check if this is the INIT PR
+        id: check_init_pr
+        run: |
+          TITLE=$(jq -r '.pull_request.title' "$GITHUB_EVENT_PATH")
+          BODY=$(jq -r '.pull_request.body' "$GITHUB_EVENT_PATH")
+
+          if [[ "$TITLE" == "${{ env.TRIGGER_TITLE_PREFIX }}"* && "$BODY" == *"${{ env.TRIGGER_BODY_MARKER }}"* ]]; then
+            echo "INIT_PR=true" >> $GITHUB_ENV
+            echo "INIT PR detected."
+          else
+            echo "INIT_PR=false" >> $GITHUB_ENV
+            echo "Not the INIT PR, skipping approval and merge."
+          fi
+
+      - name: Set repo variable to enable other actions to run
+        if: env.INIT_PR == 'true'
+        run: |
+          gh variable set ACTIONS_ENABLED --body "true" --repo https://github.com/${{ github.repository }}
+
+      - name: Fetch PR Author
+        if: env.INIT_PR == 'true'
+        id: pr_author
+        run: |
+          set -x
+          AUTHOR=$(jq -r '.pull_request.user.login' "$GITHUB_EVENT_PATH")
+          echo "PR_AUTHOR=$AUTHOR" >> $GITHUB_ENV
+
+      - name: Check if Author is in togethercomputer/tech-ops
+        if: env.INIT_PR == 'true'
+        id: check_team
+        run: |
+          set -x
+          ORG_NAME="togethercomputer"
+          TEAM_SLUG="tech-ops"
+          AUTHOR="$PR_AUTHOR"
+          
+          MEMBERS=$(curl -s -H "Authorization: Bearer ${{ secrets.ROBOT_GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/$ORG_NAME/teams/$TEAM_SLUG/members" | jq -r '.[].login')
+
+          if echo "$MEMBERS" | grep -q "^$AUTHOR$"; then
+            echo "User is in togethercomputer/tech-ops"
+            echo "APPROVE_PR=true" >> $GITHUB_ENV
+          else
+            echo "User is NOT in togethercomputer/tech-ops. Exiting."
+            exit 1
+          fi
+
+      - name: Approve PR
+        if: env.APPROVE_PR == 'true'
+        run: |
+          gh pr review --approve https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+      - name: Merge PR
+        if: env.APPROVE_PR == 'true'
+        run: |
+          gh pr merge --squash --admin https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+      - name: Remove This Workflow After init PR merged
+        if: env.APPROVE_PR == 'true'
+        run: |
+          git config --global user.name "together-robot"
+          git config --global user.email "together-robot@users.noreply.github.com"
+          
+          # Clone the repo
+          git clone https://x-access-token:${{ secrets.ROBOT_GITHUB_TOKEN }}@github.com/${{ github.repository }} repo
+          cd repo
+
+          # Remove the workflow file
+          rm -f .github/workflows/auto-merge-init-pr.yaml
+
+          # Commit and push the change
+          git commit -am 'Cleanup: Remove initialization workflow after merging PR'
+          git push origin main
