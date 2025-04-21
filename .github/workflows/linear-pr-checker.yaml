@@ -1,0 +1,18 @@
+name: Linear PR Checker
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+    working-directory: ./pr_checker
+
+jobs:
+  linear_pr_checker:
+    if: ${{ vars.ACTIONS_ENABLED == 'true' }}
+    uses: togethercomputer/tools/.github/workflows/pr_checker.yml@main
+    secrets: inherit
